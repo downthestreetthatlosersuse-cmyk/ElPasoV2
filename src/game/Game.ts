@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { sfx } from "./audio";
 import { hud, UNLOCK_AT, UPG_NAMES, UPG_QUIRK } from "./store";
 import { createPostFX, type PostFX } from "./postfx";
-import { buildAlienRig, updateAlienRig, type AlienRig } from "./rig";
+import { buildAlienRig, updateAlienRig, type AlienRig, type RigMats } from "./rig";
 
 /* internal render resolution — chunky 480i-style pixels */
 const W = 640;
@@ -425,6 +425,10 @@ export class Game {
     this.mat.gundark = this.lambert(0x191c22);
     this.mat.gripwood = this.lambert(0x7a4a20);
     this.mat.brass = this.lambert(0xd8a838);
+    /* xenoforged race materials: copper cabling, warlord flesh tones */
+    this.mat.cable = this.lambert(0xb06a30);
+    this.mat.bossFlesh = new THREE.MeshLambertMaterial({ map: this.tex.alienGreen, color: 0xa9bd8d });
+    this.mat.bossFleshD = this.lambert(0x4a6a30);
 
     this.basic.eye = new THREE.MeshBasicMaterial({ color: 0xc8ff2a });
     this.basic.mouth = new THREE.MeshBasicMaterial({ color: 0x180a20 });
@@ -432,6 +436,8 @@ export class Game {
     this.basic.shadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 });
     this.basic.bulb = new THREE.MeshBasicMaterial({ color: 0xffc46a });
     this.basic.stripe = new THREE.MeshBasicMaterial({ color: 0xd8b23a });
+    this.basic.core = new THREE.MeshBasicMaterial({ color: 0x8dff3a });
+    this.basic.optic = new THREE.MeshBasicMaterial({ color: 0xff4a2a });
 
     this.adobeMats = [0xfff2dd, 0xf2ddc0, 0xe8d0b0, 0xfff6e6].map(
       (c) => new THREE.MeshLambertMaterial({ map: this.tex.adobe, color: c })
@@ -1630,9 +1636,9 @@ export class Game {
     }
     this.scene.add(this.pMesh);
 
-    /* projectiles */
-    const pGeo = new THREE.SphereGeometry(0.17, 8, 6);
-    const pMatB = new THREE.MeshBasicMaterial({ color: 0x9dff3a });
+    /* blaster bolts — hot capsules oriented along their velocity */
+    const pGeo = new THREE.CapsuleGeometry(0.1, 0.45, 4, 8);
+    const pMatB = new THREE.MeshBasicMaterial({ color: 0xd8ffa0 });
     for (let i = 0; i < 20; i++) {
       const m = new THREE.Mesh(pGeo, pMatB);
       m.visible = false;
@@ -1812,26 +1818,28 @@ export class Game {
 
   private buildEnemy(kind: EnemyKind, x: number, z: number): Enemy {
     const def = ENEMY_DEFS[kind];
-    const rig = buildAlienRig(kind, {
-      mat: this.mat,
-      basic: this.basic,
-      geo: this.geo,
-      lambert: (c) => this.lambert(c),
-    });
-    const g = rig.group;
+    const g = new THREE.Group();
+    /* one race, one material kit — class is expressed by the rig's loadout */
+    const rigMats: RigMats = {
+      flesh: kind === "boss" ? this.mat.bossFlesh : this.mat.alienGreen,
+      fleshD: kind === "boss" ? this.mat.bossFleshD : this.mat.alienGreenD,
+      plating: this.mat.gunmetal,
+      dark: this.mat.gundark,
+      brass: this.mat.brass,
+      joint: this.mat.metal,
+      cable: this.mat.cable,
+      core: this.basic.core,
+      optic: this.basic.optic,
+      mouth: this.basic.sac,
+      eye: this.basic.eye,
+      shadow: this.basic.shadow,
+      cape: this.mat.cape,
+      shadowGeo: this.geo.shadow,
+    };
+    const rig = buildAlienRig(kind, g, rigMats);
     const hitMeshes: THREE.Mesh[] = rig.hitMeshes;
-    const parts: Enemy["parts"] = rig.parts;
+    const parts: Enemy["parts"] = { body: rig.body };
     const baseScale = new THREE.Vector3(1, 1, 1);
-
-    if (kind === "grunt") {
-      /* geometry + skeleton built by buildAlienRig */
-    } else if (kind === "brute" || kind === "boss") {
-      /* geometry + skeleton built by buildAlienRig */
-    } else {
-      /* geometry + skeleton built by buildAlienRig */
-    }
-
-    /* boss sac, two-segment cape, crown horns and belt live on the rig */
 
     const e: Enemy = {
       kind,
@@ -3268,7 +3276,9 @@ export class Game {
             e.spitCd -= dt;
             if (e.spitCd <= 0 && dist > 8 && dist < 46) {
               e.spitCd = rand(2.6, 3.4);
-              for (const off of [-0.35, 0, 0.35]) this.fireProjectile(gp, Math.round(e.dmg * 0.6), off);
+              e.group.updateWorldMatrix(true, true);
+              e.rig.muzzle.getWorldPosition(this.v2); /* shoulder plasma pods */
+              for (const off of [-0.35, 0, 0.35]) this.fireBlaster(this.v2, Math.round(e.dmg * 0.6), off, true);
             }
           }
         } else {
@@ -3294,7 +3304,27 @@ export class Game {
       e.bobT += dt * (moving ? e.speed * 2.2 : 3);
       e.group.position.y = e.leapT > 0 ? Math.sin(((0.5 - e.leapT) / 0.5) * Math.PI) * 1.5 : 0;
       /* skeletal rig — locomotion, attack and head tracking run as independent layers */
-      updateAlienRig(e, dt, this.pos, combat, this.clock.elapsedTime);
+      updateAlienRig(
+        e.rig,
+        dt,
+        e.kind,
+        e.boss,
+        this.pos,
+        e.group.position,
+        e.group.rotation.y,
+        moving,
+        e.speed,
+        combat,
+        e.leapT,
+        0.5,
+        e.lungeT,
+        0.3,
+        e.chargeT,
+        e.kind === "spitter" && e.spitCd < 0.45 ? 1 - e.spitCd / 0.45 : 0,
+        e.hitPop,
+        e.flashT,
+        this.clock.elapsedTime
+      );
       /* hit squash decays here; the rig applies it to the chest bone */
       if (e.hitPop > 0) e.hitPop = Math.max(0, e.hitPop - dt);
       if (e.flashT > 0) {
@@ -3307,15 +3337,15 @@ export class Game {
     }
   }
 
-  private fireProjectile(from: THREE.Vector3, dmg: number, aimOffset = 0) {
+  /* xenoforged blaster fire — straight, fast, glowing; heavy = warlord plasma pods */
+  private fireBlaster(from: THREE.Vector3, dmg: number, aimOffset = 0, heavy = false) {
     const p = this.projectiles.find((p) => !p.active);
     if (!p) return;
     p.active = true;
-    p.life = 4;
+    p.life = 2.6;
     p.mesh.visible = true;
-    p.mesh.position.set(from.x, 1.6, from.z);
-    this.v1.set(this.pos.x - from.x, 0, this.pos.z - from.z);
-    const d = this.v1.length() || 1;
+    p.mesh.position.copy(from);
+    this.v1.set(this.pos.x - from.x, this.pos.y + 1.15 - from.y, this.pos.z - from.z);
     this.v1.normalize();
     if (aimOffset !== 0) {
       const cos = Math.cos(aimOffset);
@@ -3324,17 +3354,23 @@ export class Game {
       this.v1.z = this.v1.x * sin + this.v1.z * cos;
       this.v1.x = nx;
     }
-    p.vel.set(this.v1.x * 15, 3.2 + d * 0.06, this.v1.z * 15);
+    p.vel.copy(this.v1).multiplyScalar(heavy ? 24 : 30);
     p.mesh.userData.dmg = dmg;
-    sfx.spit();
+    /* muzzle report — flash ring, sparks, light pop */
+    this.spawnRing(from, heavy ? 0xb4ff3c : 0x8dff3a, heavy ? 1.7 : 1.1, 0.16);
+    this.burst(from, 0xb8ff70, 4, 3);
+    this.fireEventLight(from.x, from.y, from.z, 0x8dff3a, heavy ? 120 : 60, 0.16);
+    if (heavy) sfx.plasma();
+    else sfx.laser();
   }
 
   private updateProjectiles(dt: number) {
     for (const p of this.projectiles) {
       if (!p.active) continue;
       p.life -= dt;
-      p.vel.y -= 13 * dt;
       p.mesh.position.addScaledVector(p.vel, dt);
+      this.v3.copy(p.vel).normalize();
+      p.mesh.quaternion.setFromUnitVectors(this.v2.set(0, 1, 0), this.v3);
       const mp = p.mesh.position;
       if (mp.y < 0.14) {
         p.active = false;
