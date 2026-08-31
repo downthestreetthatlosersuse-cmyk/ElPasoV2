@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { sfx } from "./audio";
 import { hud, UNLOCK_AT, UPG_NAMES, UPG_QUIRK } from "./store";
 import { createPostFX, type PostFX } from "./postfx";
+import { buildAlienRig, updateAlienRig, type AlienRig } from "./rig";
 
 /* internal render resolution — chunky 480i-style pixels */
 const W = 640;
@@ -93,7 +94,8 @@ interface Enemy {
   dieT: number;
   bobT: number;
   waypoint: THREE.Vector3 | null;
-  parts: { body: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; sac?: THREE.Object3D; cape?: THREE.Object3D };
+  parts: { body: THREE.Object3D; sac?: THREE.Object3D; cape?: THREE.Object3D };
+  rig: AlienRig;
   hitMeshes: THREE.Mesh[];
   hitPop: number;
   flashT: number;
@@ -1810,167 +1812,26 @@ export class Game {
 
   private buildEnemy(kind: EnemyKind, x: number, z: number): Enemy {
     const def = ENEMY_DEFS[kind];
-    const g = new THREE.Group();
-    const hitMeshes: THREE.Mesh[] = [];
-    const parts: Enemy["parts"] = { body: g };
+    const rig = buildAlienRig(kind, {
+      mat: this.mat,
+      basic: this.basic,
+      geo: this.geo,
+      lambert: (c) => this.lambert(c),
+    });
+    const g = rig.group;
+    const hitMeshes: THREE.Mesh[] = rig.hitMeshes;
+    const parts: Enemy["parts"] = rig.parts;
     const baseScale = new THREE.Vector3(1, 1, 1);
 
-    const addShadow = (s: number) => {
-      const sh = new THREE.Mesh(this.geo.shadow, this.basic.shadow);
-      sh.rotation.x = -Math.PI / 2;
-      sh.position.y = 0.03;
-      sh.scale.set(s, s, s);
-      g.add(sh);
-    };
-
     if (kind === "grunt") {
-      const body = new THREE.Mesh(this.geo.gruntBody, this.mat.alienGreen);
-      /* grunt body base scale set below */
-      body.position.y = 0.95;
-      body.scale.set(1, 1.25, 0.9);
-      baseScale.set(1, 1.25, 0.9);
-      g.add(body);
-      hitMeshes.push(body);
-      const head = new THREE.Mesh(this.geo.head, this.mat.alienGreenD);
-      head.position.y = 1.88;
-      g.add(head);
-      hitMeshes.push(head);
-      for (const s of [-1, 1]) {
-        const eye = new THREE.Mesh(this.geo.eye, this.basic.eye);
-        eye.position.set(0.15 * s, 1.92, 0.26);
-        g.add(eye);
-        const arm = new THREE.Mesh(this.geo.arm, this.mat.alienGreenD);
-        arm.position.set(0.62 * s, 1.05, 0);
-        arm.rotation.z = s * 2.4;
-        g.add(arm);
-        const claw = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.24, 4), this.mat.alienBelly);
-        claw.position.set(0, -0.34, 0);
-        claw.rotation.x = Math.PI;
-        arm.add(claw);
-        if (s === -1) parts.armL = arm;
-        else parts.armR = arm;
-      }
-      const belly = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6), this.mat.alienBelly);
-      belly.position.set(0, 0.82, 0.3);
-      belly.scale.set(1, 1.15, 0.55);
-      g.add(belly);
-      const fin = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 4), this.mat.alienGreenD);
-      fin.position.set(0, 1.4, -0.42);
-      fin.rotation.x = 0.55;
-      g.add(fin);
-      const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.1, 8), this.basic.mouth);
-      mouth.position.set(0, 1.72, 0.32);
-      g.add(mouth);
-      for (const s of [-1, 1]) {
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 5), this.mat.alienGreenD);
-        spike.position.set(0.44 * s, 1.48, -0.05);
-        spike.rotation.z = -s * 0.6;
-        g.add(spike);
-      }
-      parts.body = body;
-      addShadow(1);
+      /* geometry + skeleton built by buildAlienRig */
     } else if (kind === "brute" || kind === "boss") {
-      const body = new THREE.Mesh(this.geo.bruteBody, kind === "boss" ? this.lambert(0x9c2fde) : this.mat.brutePurple);
-      body.position.y = 1.15;
-      g.add(body);
-      hitMeshes.push(body);
-      const head = new THREE.Mesh(this.geo.bruteHead, this.mat.bruteDark);
-      head.position.y = 2.25;
-      g.add(head);
-      hitMeshes.push(head);
-      for (const s of [-1, 1]) {
-        const horn = new THREE.Mesh(this.geo.horn, this.mat.bruteDark);
-        horn.position.set(0.3 * s, 2.65, 0);
-        horn.rotation.z = -s * 0.5;
-        g.add(horn);
-        const eye = new THREE.Mesh(this.geo.eye, this.basic.eye);
-        eye.position.set(0.18 * s, 2.3, 0.34);
-        g.add(eye);
-        const fist = new THREE.Mesh(this.geo.fist, this.mat.bruteDark);
-        fist.position.set(1.05 * s, 1.1, 0.1);
-        g.add(fist);
-        const knuckle = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.28, 4), this.mat.brass);
-        knuckle.position.set(0, 0, 0.3);
-        knuckle.rotation.x = Math.PI / 2;
-        fist.add(knuckle);
-        const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.34, 7, 6), this.mat.bruteDark);
-        pauldron.position.set(0.85 * s, 1.98, 0);
-        pauldron.scale.set(1, 0.7, 1);
-        g.add(pauldron);
-        const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.3, 5), this.mat.brass);
-        tusk.position.set(0.24 * s, 2.0, 0.33);
-        tusk.rotation.z = -s * 0.25;
-        g.add(tusk);
-      }
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.95, 0.26), this.mat.bruteDark);
-      plate.position.set(0, 1.3, 0.5);
-      g.add(plate);
-      for (let i = 0; i < 3; i++) {
-        const spine = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 5), this.mat.bruteDark);
-        spine.position.set(0, 1.95 - i * 0.55, -0.56);
-        spine.rotation.x = -0.5;
-        g.add(spine);
-      }
-      parts.body = body;
-      addShadow(1.7);
+      /* geometry + skeleton built by buildAlienRig */
     } else {
-      const body = new THREE.Mesh(this.geo.spitBody, this.mat.spitter);
-      body.position.y = 0.75;
-      g.add(body);
-      hitMeshes.push(body);
-      const head = new THREE.Mesh(this.geo.head, this.mat.spitterD);
-      head.position.y = 1.72;
-      head.scale.set(1.1, 1, 1.1);
-      g.add(head);
-      hitMeshes.push(head);
-      const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.17, 8), this.basic.mouth);
-      mouth.position.set(0, 1.68, 0.36);
-      g.add(mouth);
-      for (const s of [-1, 1]) {
-        const eye = new THREE.Mesh(this.geo.eye, this.basic.eye);
-        eye.position.set(0.2 * s, 1.9, 0.24);
-        g.add(eye);
-      }
-      const sac = new THREE.Mesh(this.geo.sac, this.basic.sac);
-      sac.position.set(0, 1.1, -0.42);
-      g.add(sac);
-      parts.sac = sac;
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const leg = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.55, 5), this.mat.spitterD);
-        leg.position.set(Math.cos(a) * 0.45, 0.28, Math.sin(a) * 0.45);
-        leg.rotation.z = -Math.cos(a) * 0.9;
-        leg.rotation.x = Math.sin(a) * 0.9;
-        g.add(leg);
-      }
-      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.7, 6), this.mat.spitter);
-      tail.position.set(0, 0.55, -0.6);
-      tail.rotation.x = -1.9;
-      g.add(tail);
-      parts.body = body;
-      addShadow(1.1);
+      /* geometry + skeleton built by buildAlienRig */
     }
 
-    if (kind === "boss") {
-      for (const s of [-1, 0, 1]) {
-        const horn = new THREE.Mesh(this.geo.horn, this.mat.brass);
-        horn.position.set(0.32 * s, 2.72, 0.05);
-        horn.rotation.z = -s * 0.45;
-        g.add(horn);
-      }
-      const sac = new THREE.Mesh(this.geo.sac, this.basic.sac);
-      sac.position.set(0, 1.2, -0.55);
-      g.add(sac);
-      parts.sac = sac;
-      const cape = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.5), this.mat.cape);
-      cape.position.set(0, 1.35, -0.85);
-      cape.rotation.x = 0.18;
-      g.add(cape);
-      parts.cape = cape;
-      const belt = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.3, 1.1), this.mat.brass);
-      belt.position.set(0, 0.55, 0);
-      g.add(belt);
-    }
+    /* boss sac, two-segment cape, crown horns and belt live on the rig */
 
     const e: Enemy = {
       kind,
@@ -1988,6 +1849,7 @@ export class Game {
       bobT: rand(0, 6),
       waypoint: null,
       parts,
+      rig,
       hitMeshes,
       hitPop: 0,
       flashT: 0,
@@ -2009,8 +1871,8 @@ export class Game {
       lastGun: -1,
     };
     for (const m of hitMeshes) m.userData.e = e;
-    if (kind === "boss") g.scale.set(1.5, 1.5, 1.5);
     g.position.set(x, 0, z);
+    rig.prevPos.set(x, 0, z);
     this.shadowify(g);
     this.scene.add(g);
     this.hitList.push(...hitMeshes);
@@ -2046,6 +1908,7 @@ export class Game {
     const a = rand(0, Math.PI * 2);
     const e = this.buildEnemy("boss", Math.cos(a) * 44, -78 + Math.sin(a) * 6);
     e.hp = Math.round(ENEMY_DEFS.boss.hp * (1 + this.wave * 0.04));
+    e.rig.roar = 1.4; /* entrance roar: jaw gape, arm spread, chest swell */
     hud.banner("EL JEFE HAS ARRIVED");
     sfx.boss();
     const p = e.group.position;
@@ -3356,13 +3219,9 @@ export class Game {
             if (e.lungeT > 0) {
               const prev = e.lungeT;
               e.lungeT -= dt;
-              const phase = (t: number) => Math.sin(((0.3 - t) / 0.3) * Math.PI);
-              e.parts.body.position.z = phase(Math.max(0, e.lungeT)) * 0.45;
               if (prev > 0.15 && e.lungeT <= 0.15 && dist < e.radius + 1.6) {
                 this.damagePlayer(e.dmg);
               }
-            } else {
-              e.parts.body.position.z = 0;
             }
           }
         } else if (e.kind === "brute" || e.kind === "boss") {
@@ -3376,9 +3235,7 @@ export class Game {
               this.shake += 0.7;
               this.shakeR += 0.08;
             }
-            e.parts.body.rotation.z = Math.sin(e.chargeT * 42) * 0.09;
           } else {
-            e.parts.body.rotation.z = 0;
             e.chargeCd -= dt;
             if (dist > 9 && dist < 27 && e.chargeCd <= 0) {
               e.chargeT = 0.85;
@@ -3402,13 +3259,9 @@ export class Game {
             if (e.lungeT > 0) {
               const prev = e.lungeT;
               e.lungeT -= dt;
-              const phase = (t: number) => Math.sin(((0.3 - t) / 0.3) * Math.PI);
-              e.parts.body.position.z = phase(Math.max(0, e.lungeT)) * 0.45;
               if (prev > 0.15 && e.lungeT <= 0.15 && dist < e.radius + 1.6) {
                 this.damagePlayer(e.dmg);
               }
-            } else {
-              e.parts.body.position.z = 0;
             }
           }
           if (e.boss) {
@@ -3417,10 +3270,6 @@ export class Game {
               e.spitCd = rand(2.6, 3.4);
               for (const off of [-0.35, 0, 0.35]) this.fireProjectile(gp, Math.round(e.dmg * 0.6), off);
             }
-          }
-          if (e.parts.sac) {
-            const pulse = 1 + Math.sin(this.clock.elapsedTime * 5 + gp.x) * 0.18;
-            e.parts.sac.scale.set(pulse, pulse, pulse);
           }
         } else {
           /* spitter */
@@ -3438,35 +3287,22 @@ export class Game {
               this.fireProjectile(gp, e.dmg);
             }
           }
-          if (e.parts.sac) {
-            const pulse = 1 + Math.sin(this.clock.elapsedTime * 5 + gp.x) * 0.18;
-            e.parts.sac.scale.set(pulse, pulse, pulse);
-          }
         }
       }
 
       if (dist > 0.01) e.group.rotation.y = Math.atan2(dx, dz);
       e.bobT += dt * (moving ? e.speed * 2.2 : 3);
-      let baseY = e.kind === "brute" || e.kind === "boss" ? 0 : Math.abs(Math.sin(e.bobT)) * 0.12;
-      if (e.leapT > 0) baseY = Math.sin(((0.5 - e.leapT) / 0.5) * Math.PI) * 1.5;
-      e.group.position.y = baseY;
-      if (e.parts.armL) e.parts.armL.rotation.x = Math.sin(e.bobT) * 0.7;
-      if (e.parts.armR) e.parts.armR.rotation.x = -Math.sin(e.bobT) * 0.7;
-      /* hit squash pop */
-      if (e.hitPop > 0) {
-        e.hitPop = Math.max(0, e.hitPop - dt);
-        const pop = 1 + (e.hitPop / 0.22) * 0.22;
-        e.parts.body.scale.set(e.baseScale.x * pop, e.baseScale.y / pop, e.baseScale.z * pop);
-      }
+      e.group.position.y = e.leapT > 0 ? Math.sin(((0.5 - e.leapT) / 0.5) * Math.PI) * 1.5 : 0;
+      /* skeletal rig — locomotion, attack and head tracking run as independent layers */
+      updateAlienRig(e, dt, this.pos, combat, this.clock.elapsedTime);
+      /* hit squash decays here; the rig applies it to the chest bone */
+      if (e.hitPop > 0) e.hitPop = Math.max(0, e.hitPop - dt);
       if (e.flashT > 0) {
         e.flashT -= dt;
         if (e.flashT <= 0) {
           const om = e.parts.body.userData.origMat as THREE.Material | undefined;
           if (om) (e.parts.body as THREE.Mesh).material = om;
         }
-      }
-      if (e.parts.cape) {
-        e.parts.cape.rotation.x = 0.18 + Math.sin(this.clock.elapsedTime * 6 + gp.x) * 0.12 + (moving ? 0.22 : 0);
       }
     }
   }
