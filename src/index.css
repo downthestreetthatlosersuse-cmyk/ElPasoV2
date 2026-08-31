@@ -1,0 +1,392 @@
+@import "tailwindcss";
+
+:root {
+  --spr: 6px;
+  --hud-orange: #f28b1d;
+  --hud-gold: #ffd23f;
+  --hud-dark: #140b1e;
+  --alien: #8dff3a;
+  --blood: #ff3b30;
+}
+
+* {
+  -webkit-font-smoothing: none;
+  font-smoothing: none;
+}
+
+.font-display {
+  font-family: "Bungee", "VT323", monospace;
+}
+.font-crt {
+  font-family: "VT323", monospace;
+}
+
+.game-canvas {
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: cover;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+/* ---------- CRT / interlace layers ---------- */
+.scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.28) 0px,
+    rgba(0, 0, 0, 0.28) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  animation: interlace 0.066s steps(2) infinite;
+}
+@keyframes interlace {
+  from {
+    background-position-y: 0px;
+  }
+  to {
+    background-position-y: 2px;
+  }
+}
+
+.crt-roll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 160px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 255, 255, 0.05),
+    transparent
+  );
+  animation: roll 7s linear infinite;
+}
+@keyframes roll {
+  from {
+    top: -25%;
+  }
+  to {
+    top: 118%;
+  }
+}
+
+.crt-vignette {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 52%,
+    rgba(10, 2, 16, 0.62) 100%
+  );
+  box-shadow: inset 0 0 140px rgba(0, 0, 0, 0.65);
+}
+
+/* ---------- HUD chrome ---------- */
+.hud-panel {
+  background: rgba(18, 10, 26, 0.85);
+  border: 2px solid var(--hud-orange);
+  box-shadow:
+    0 0 0 2px #0c0514,
+    inset 0 0 14px rgba(242, 139, 29, 0.12);
+}
+
+/* ---------- tactical HUD chrome ---------- */
+.tac {
+  position: relative;
+  background: linear-gradient(180deg, rgba(26, 12, 34, 0.9), rgba(11, 5, 18, 0.92));
+  box-shadow:
+    0 0 0 2px #0c0514,
+    0 6px 22px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.tac::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.22) 0px,
+    rgba(0, 0, 0, 0.22) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+/* corner brackets */
+.brk {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+  z-index: 2;
+}
+.brk-tl { top: 3px; left: 3px; border-top: 2px solid; border-left: 2px solid; }
+.brk-tr { top: 3px; right: 3px; border-top: 2px solid; border-right: 2px solid; }
+.brk-bl { bottom: 3px; left: 3px; border-bottom: 2px solid; border-left: 2px solid; }
+.brk-br { bottom: 3px; right: 3px; border-bottom: 2px solid; border-right: 2px solid; }
+/* diagonal accent stripe */
+.tac-stripe {
+  position: absolute;
+  top: 0;
+  height: 3px;
+  width: 70px;
+  transform: skewX(-24deg);
+  z-index: 2;
+}
+/* skewed bar segment */
+.seg {
+  transform: skewX(-16deg);
+  height: 100%;
+}
+/* ammo bullet pip */
+.pip {
+  width: 5px;
+  transform: skewX(-16deg);
+}
+/* health ghost trail (delayed red bar behind the live bar) */
+.ghost-bar {
+  transition: width 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) 0.25s;
+}
+.live-bar {
+  transition: width 0.12s ease-out;
+}
+/* big glowing readout */
+.glow-num {
+  text-shadow:
+    0 0 12px currentColor,
+    0 2px 0 rgba(0, 0, 0, 0.8);
+}
+@keyframes critpulse {
+  0%, 100% { box-shadow: 0 0 0 2px #0c0514, 0 0 22px rgba(255, 59, 48, 0.55); }
+  50% { box-shadow: 0 0 0 2px #0c0514, 0 0 6px rgba(255, 59, 48, 0.15); }
+}
+.crit { animation: critpulse 0.9s ease-in-out infinite; }
+
+.title-chrome {
+  color: var(--hud-gold);
+  text-shadow:
+    0 2px 0 #c96a1e,
+    0 4px 0 #8a3512,
+    0 6px 0 #4a180c,
+    0 10px 30px rgba(255, 90, 20, 0.5);
+}
+
+.title-blood {
+  color: #ff5a3c;
+  text-shadow:
+    0 2px 0 #8a1408,
+    0 4px 0 #4a0a06,
+    0 8px 26px rgba(255, 40, 10, 0.55);
+}
+
+.btn-chunk {
+  font-family: "Bungee", monospace;
+  background: var(--hud-orange);
+  color: #2a1004;
+  border: 3px solid #2a1004;
+  box-shadow: 0 6px 0 #7a2f12;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s,
+    filter 0.08s;
+  cursor: pointer;
+  user-select: none;
+}
+.btn-chunk:hover {
+  filter: brightness(1.12);
+}
+.btn-chunk:active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 #7a2f12;
+}
+
+.keycap {
+  font-family: "VT323", monospace;
+  background: #241432;
+  border: 2px solid #5a3a78;
+  border-bottom-width: 4px;
+  color: #e8d8ff;
+  padding: 0 7px;
+  font-size: 18px;
+  line-height: 22px;
+  display: inline-block;
+  min-width: 26px;
+  text-align: center;
+}
+
+/* ---------- animations ---------- */
+.dmg-flash {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 20, 40, 0.22),
+    rgba(170, 0, 20, 0.6)
+  );
+  animation: dmgflash 0.55s ease-out forwards;
+}
+@keyframes dmgflash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.lowhp {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 42%,
+    rgba(205, 0, 30, 0.65)
+  );
+  animation: lowhp 0.85s ease-in-out infinite;
+}
+@keyframes lowhp {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.hitmarker {
+  animation: hitmark 0.2s ease-out forwards;
+}
+@keyframes hitmark {
+  0% {
+    opacity: 1;
+    transform: scale(1.6) rotate(45deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7) rotate(45deg);
+  }
+}
+
+.banner-anim {
+  animation: bannerIn 2.9s cubic-bezier(0.2, 0.9, 0.25, 1) forwards;
+}
+@keyframes bannerIn {
+  0% {
+    opacity: 0;
+    transform: scale(2.4);
+    filter: blur(8px);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  76% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+.feed-in {
+  animation: feedIn 0.16s ease-out;
+}
+@keyframes feedIn {
+  from {
+    opacity: 0;
+    transform: translateX(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.neon-flicker {
+  animation: flicker 4.2s linear infinite;
+}
+@keyframes flicker {
+  0%,
+  91%,
+  94%,
+  98%,
+  100% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 0.35;
+  }
+  96% {
+    opacity: 0.55;
+  }
+}
+
+.gun-flash {
+  animation: gunflash 0.28s ease-out forwards;
+}
+@keyframes gunflash {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.nuke-flash {
+  background: radial-gradient(ellipse at center, #fff8e8, #ffd23f 45%, rgba(255,120,20,0.85));
+  animation: nukeflash 0.85s ease-out forwards;
+}
+@keyframes nukeflash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.boom-flash {
+  background: radial-gradient(ellipse at center, rgba(255,220,150,0.5), rgba(255,140,40,0.28) 55%, transparent 80%);
+  animation: boomflash 0.42s ease-out forwards;
+}
+@keyframes boomflash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.combo-pop {
+  animation: combopop 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes combopop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(2.2);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.blinker {
+  animation: blink 1.1s steps(2) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.menu-scan {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.35) 0px,
+    rgba(0, 0, 0, 0.35) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+}

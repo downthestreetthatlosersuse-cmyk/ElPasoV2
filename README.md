@@ -1,2 +1,2 @@
-# ElPasoV2
-Git Repository Mirroring
+# ElPaso
+PS2-Style 3D Pixel Art Shooter
