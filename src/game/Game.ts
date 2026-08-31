@@ -232,6 +232,11 @@ export class Game {
   private upgraded = [false, false, false, false];
   private upgradeFX: THREE.Group[] = [];
   private upgradeMats: THREE.MeshBasicMaterial[] = [];
+  /* otherworldly engravings — alien script burned into evolved gunmetal */
+  private engraveGroups: THREE.Group[] = [];
+  private engraveMats: THREE.MeshBasicMaterial[] = [];
+  private engraveReveal: number[] = [0, 0, 0, 0];
+  private wColor = new THREE.Color(0xffffff);
   /* time-of-flight: impacts apply when the bullet arrives, not on trigger pull */
   private gameT = 0;
   private pending: { at: number; fn: () => void }[] = [];
@@ -1347,6 +1352,158 @@ export class Game {
     return grp;
   }
 
+  /* alien script — a seeded strip of angular glyphs, drawn white and tinted
+     by the material's evolution color. Crisp nearest filtering keeps the
+     carving pixel-sharp at 480i. */
+  private makeGlyphTex(seed: number): THREE.CanvasTexture {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const g = c.getContext("2d")!;
+    g.clearRect(0, 0, 256, 64);
+    g.strokeStyle = "#ffffff";
+    g.fillStyle = "#ffffff";
+    g.lineWidth = 5;
+    g.lineCap = "square";
+    let s = seed >>> 0;
+    const rnd = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+    const cells = 8;
+    const cw = 256 / cells;
+    for (let i = 0; i < cells; i++) {
+      const x0 = i * cw + 5;
+      const y0 = 10;
+      const w = cw - 10;
+      const h = 44;
+      const kind = Math.floor(rnd() * 7);
+      g.beginPath();
+      if (kind === 0) {
+        /* notched pillar */
+        g.moveTo(x0 + w / 2, y0);
+        g.lineTo(x0 + w / 2, y0 + h);
+        const n = 1 + Math.floor(rnd() * 3);
+        for (let k = 0; k < n; k++) {
+          const yy = y0 + h * (0.2 + 0.6 * rnd());
+          g.moveTo(x0, yy);
+          g.lineTo(x0 + w * (0.4 + 0.5 * rnd()), yy);
+        }
+      } else if (kind === 1) {
+        /* chevron, sometimes doubled */
+        g.moveTo(x0, y0 + h * 0.8);
+        g.lineTo(x0 + w / 2, y0 + h * 0.2);
+        g.lineTo(x0 + w, y0 + h * 0.8);
+        if (rnd() > 0.5) {
+          g.moveTo(x0 + w * 0.25, y0 + h);
+          g.lineTo(x0 + w / 2, y0 + h * 0.55);
+          g.lineTo(x0 + w * 0.75, y0 + h);
+        }
+      } else if (kind === 2) {
+        /* eclipsed ring */
+        g.arc(x0 + w / 2, y0 + h / 2, h * 0.32, 0, Math.PI * 2);
+        g.moveTo(x0 + w * 0.2, y0 + h * 0.85);
+        g.lineTo(x0 + w * 0.8, y0 + h * 0.15);
+      } else if (kind === 3) {
+        /* warning delta */
+        g.moveTo(x0 + w / 2, y0);
+        g.lineTo(x0 + w, y0 + h);
+        g.lineTo(x0, y0 + h);
+        g.closePath();
+      } else if (kind === 4) {
+        /* zigzag rune */
+        g.moveTo(x0, y0);
+        g.lineTo(x0 + w * 0.7, y0);
+        g.lineTo(x0 + w * 0.3, y0 + h * 0.5);
+        g.lineTo(x0 + w, y0 + h * 0.5);
+        g.lineTo(x0 + w * 0.3, y0 + h);
+      } else if (kind === 5) {
+        /* brackets around a seed dot */
+        g.moveTo(x0 + w * 0.25, y0);
+        g.lineTo(x0, y0);
+        g.lineTo(x0, y0 + h);
+        g.lineTo(x0 + w * 0.25, y0 + h);
+        g.moveTo(x0 + w * 0.75, y0);
+        g.lineTo(x0 + w, y0);
+        g.lineTo(x0 + w, y0 + h);
+        g.lineTo(x0 + w * 0.75, y0 + h);
+        g.moveTo(x0 + w / 2 + 3, y0 + h / 2);
+        g.arc(x0 + w / 2, y0 + h / 2, 3, 0, Math.PI * 2);
+      } else {
+        /* triple rain ticks */
+        for (let k = 0; k < 3; k++) {
+          g.moveTo(x0 + w * (0.2 + 0.3 * k), y0);
+          g.lineTo(x0 + w * (0.05 + 0.3 * k), y0 + h);
+        }
+      }
+      g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    t.wrapS = THREE.RepeatWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  /* engraving strips + bands hug each gun's real surfaces; one shared
+     material per gun so the whole script breathes together */
+  private addEngravings(gun: THREE.Group, gi: number) {
+    const grp = new THREE.Group();
+    const tex = this.makeGlyphTex(1337 + gi * 7919);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      color: UPG_TINT[gi],
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const E = (w: number, h: number, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, ry, rz);
+      grp.add(m);
+    };
+    const band = (r: number, len: number, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20, 1, true), mat);
+      m.position.set(x, y, z);
+      m.rotation.x = Math.PI / 2;
+      grp.add(m);
+    };
+    if (gi === 0) {
+      /* RATTLER X — receiver flanks, shroud spine, magazine */
+      E(0.34, 0.07, 0.0485, 0.005, -0.04, 0, Math.PI / 2, 0);
+      E(0.34, 0.07, -0.0485, 0.005, -0.04, 0, -Math.PI / 2, 0);
+      E(0.22, 0.04, 0, 0.05, -0.37, -Math.PI / 2, 0, 0);
+      E(0.15, 0.05, 0.036, -0.115, -0.08, 0, Math.PI / 2, 0.12);
+    } else if (gi === 1) {
+      /* EL JUEZ — barrel flanks, glyph band around the cylinder, frame */
+      E(0.34, 0.04, 0.0295, 0.035, -0.16, 0, Math.PI / 2, 0);
+      E(0.34, 0.04, -0.0295, 0.035, -0.16, 0, -Math.PI / 2, 0);
+      band(0.07, 0.1, 0, 0.012, 0.03);
+      E(0.12, 0.05, 0.034, 0.012, 0.06, 0, Math.PI / 2, 0);
+    } else if (gi === 2) {
+      /* PUMPER-X SAURIO — pump flanks, receiver, barrel spine */
+      E(0.14, 0.06, 0.05, -0.022, -0.27, 0, Math.PI / 2, 0);
+      E(0.14, 0.06, -0.05, -0.022, -0.27, 0, -Math.PI / 2, 0);
+      E(0.12, 0.07, 0.0435, 0.032, 0.06, 0, Math.PI / 2, 0);
+      E(0.42, 0.04, 0, 0.0835, -0.19, -Math.PI / 2, 0, 0);
+    } else {
+      /* BOOMSTICK PRIME — twin tube bands + long launch-rail script */
+      band(0.091, 0.09, 0, 0.02, -0.3);
+      band(0.086, 0.09, 0, 0.02, 0.06);
+      E(0.5, 0.045, 0.089, 0.02, -0.12, 0, Math.PI / 2, 0);
+      E(0.5, 0.045, -0.089, 0.02, -0.12, 0, -Math.PI / 2, 0);
+    }
+    grp.visible = false;
+    gun.add(grp);
+    this.engraveGroups.push(grp);
+    this.engraveMats.push(mat);
+  }
+
   private buildViewmodels() {
     const star4 = this.makeStarTex(4);
     const star8 = this.makeStarTex(8);
@@ -1533,6 +1690,9 @@ export class Game {
     rpg.visible = false;
     mag.visible = false;
     this.camera.add(this.gunGroup);
+
+    /* otherworldly engravings lie dormant in the metal until evolution */
+    for (let gi = 0; gi < 4; gi++) this.addEngravings(this.guns[gi], gi);
 
     /* alien-tech overlays: glowing power strip + core orb per gun, revealed on evolve */
     const stripDefs: [number, number, number, number, number, number][] = [
@@ -2872,6 +3032,9 @@ export class Game {
     this.reserves[i] += [90, 12, 24, 5][i];
     this.upgradeFX[i].visible = true;
     this.flashMats[i].color.set(UPG_TINT[i]);
+    /* the script sears itself into the gunmetal */
+    this.engraveGroups[i].visible = true;
+    this.engraveReveal[i] = 0.0001;
     sfx.evolve();
     hud.banner(`${UPG_NAMES[i]} ONLINE`, UPG_QUIRK[i]);
     /* fusion moment: pillar of alien light, shockwave, a beat of slow-mo */
@@ -3132,6 +3295,24 @@ export class Game {
       if (this.upgradeFX[ui].visible) {
         this.upgradeMats[ui].opacity = 0.85 + Math.sin(this.clock.elapsedTime * 7 + ui * 1.7) * 0.15;
       }
+    }
+    /* engravings: white-hot sear on reveal, then a slow breathing glow.
+       A shot from the evolved gun makes the script flare for an instant. */
+    for (let ui = 0; ui < this.engraveMats.length; ui++) {
+      const em = this.engraveMats[ui];
+      if (!this.engraveGroups[ui].visible) {
+        em.opacity = 0;
+        continue;
+      }
+      if (this.engraveReveal[ui] < 1) {
+        this.engraveReveal[ui] = Math.min(1, this.engraveReveal[ui] + dt * 0.85);
+      }
+      const k = this.engraveReveal[ui];
+      const flare = ui === this.weaponIdx && this.flashT > 0 ? 0.85 : 0;
+      const burn = 1 + (1 - k) * 1.7 + flare;
+      em.opacity = Math.min(1.6, k * (0.6 + 0.22 * Math.sin(this.clock.elapsedTime * 5.5 + ui * 2.1)) * burn);
+      this.pColor.set(UPG_TINT[ui]).lerp(this.wColor, (1 - k) * 0.75 + flare * 0.3);
+      em.color.copy(this.pColor);
     }
     /* menu: gun hidden */
     this.gunGroup.visible = this.state === "playing" || this.state === "paused";
@@ -3926,6 +4107,11 @@ export class Game {
     this.killsByGun = [0, 0, 0, 0];
     this.upgraded = [false, false, false, false];
     for (const fx of this.upgradeFX) fx.visible = false;
+    for (let gi = 0; gi < this.engraveGroups.length; gi++) {
+      this.engraveGroups[gi].visible = false;
+      this.engraveReveal[gi] = 0;
+      this.engraveMats[gi].opacity = 0;
+    }
     for (let mi = 0; mi < this.flashMats.length; mi++) this.flashMats[mi].color.set(0xffffff);
     this.pending = [];
     this.gameT = 0;
