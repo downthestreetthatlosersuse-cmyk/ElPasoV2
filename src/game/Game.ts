@@ -835,6 +835,7 @@ export class Game {
     /* rocks */
     for (let i = 0; i < 14; i++) {
       const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rand(0.5, 1.5), 0), this.mat.rock);
+      r.userData.noShadow = true; /* stay dusk-lit — never fully swallowed by wall/building shadows */
       r.position.set(rand(-85, 85), 0.3, rand(-80, 85));
       r.rotation.set(rand(0, 3), rand(0, 3), 0);
       if (Math.abs(r.position.z) < 6 || Math.abs(r.position.x) < 6) r.position.z += 10;
@@ -1174,6 +1175,7 @@ export class Game {
     const wallRubble: [number, number, number][] = [[-70, -84.5, 1.6], [-20, -85.5, 1.1], [30, -84.5, 1.8], [65, -85, 1.2], [2, -86, 0.9]];
     for (const [x, z, s] of wallRubble) {
       const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), this.mat.rock);
+      rock.userData.noShadow = true; /* stay dusk-lit — never fully swallowed by the border wall's shadow */
       rock.position.set(x, s * 0.4, z);
       rock.rotation.set(rand(0, 3), rand(0, 3), 0);
       this.scene.add(rock);
@@ -1698,6 +1700,7 @@ export class Game {
     for (let i = 0; i < 4; i++) {
       const g = new THREE.Group();
       const outer = new THREE.Mesh(weedGeo, weedMat);
+      g.add(outer);
       const inner = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), weedMat);
       inner.rotation.set(0.6, 0.4, 0);
       g.add(inner);
