@@ -313,7 +313,7 @@ export function buildAlienRig(kind: RigKind, g: THREE.Group, m: RigMats): AlienR
     mesh(gg.blCoil, m.brass, elbowR, 0, -0.16, 0);
     mesh(gg.blCoil, m.brass, elbowR, 0, -0.3, 0);
     mesh(gg.blCoil, m.brass, elbowR, 0, -0.44, 0);
-    const chargeMat = new THREE.MeshBasicMaterial({ color: 0x8dff3a, transparent: true, opacity: 0.35 });
+    const chargeMat = new THREE.MeshBasicMaterial({ color: 0x59f0ff, transparent: true, opacity: 0.35 });
     const chargeCell = mesh(gg.blCell, chargeMat, elbowR, 0.0, -0.3, 0.11);
     mesh(gg.blMuzzle, m.plating, elbowR, 0, -0.58, 0);
     for (const s of [-1, 1]) mesh(gg.blProng, m.dark, elbowR, s * 0.06, -0.66, 0);

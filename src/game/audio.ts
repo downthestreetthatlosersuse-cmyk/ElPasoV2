@@ -232,4 +232,18 @@ export const sfx = {
     osc("sawtooth", 124, 60, 1.2, 0.35, 0.4);
     noise(1.4, 0.3, 240, 0.2);
   },
+  laser() {
+    osc("square", 1900, 260, 0.13, 0.24);
+    osc("sawtooth", 3400, 420, 0.1, 0.1, 0.01);
+    noise(0.07, 0.16, 4200, 0, "highpass");
+  },
+  plasma() {
+    osc("sawtooth", 260, 52, 0.42, 0.5);
+    osc("sine", 120, 30, 0.5, 0.4, 0.03);
+    noise(0.34, 0.3, 900);
+  },
+  zap() {
+    osc("square", 760, 110, 0.09, 0.2);
+    noise(0.06, 0.22, 3600, 0, "highpass");
+  },
 };

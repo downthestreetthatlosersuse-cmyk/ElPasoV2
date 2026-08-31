@@ -298,6 +298,8 @@ export class Game {
   private enemies: Enemy[] = [];
   private hitList: THREE.Mesh[] = [];
   private projectiles: Projectile[] = [];
+  private boltMatC!: THREE.MeshBasicMaterial;
+  private boltMatV!: THREE.MeshBasicMaterial;
   private pickups: Pickup[] = [];
   private tracers: Tracer[] = [];
   private particles: Particle[] = [];
@@ -425,18 +427,18 @@ export class Game {
     this.mat.gundark = this.lambert(0x191c22);
     this.mat.gripwood = this.lambert(0x7a4a20);
     this.mat.brass = this.lambert(0xd8a838);
-    /* xenoforged race materials: copper cabling, warlord flesh tones */
+    /* xenoforged race materials — one chitin for the whole species, copper cabling */
     this.mat.cable = this.lambert(0xb06a30);
-    this.mat.bossFlesh = new THREE.MeshLambertMaterial({ map: this.tex.alienGreen, color: 0xa9bd8d });
-    this.mat.bossFleshD = this.lambert(0x4a6a30);
+    this.mat.xenoChitin = new THREE.MeshLambertMaterial({ map: this.tex.alienPurple, color: 0x5f5478 });
+    this.mat.xenoChitinD = this.lambert(0x241a2e);
 
     this.basic.eye = new THREE.MeshBasicMaterial({ color: 0xc8ff2a });
     this.basic.mouth = new THREE.MeshBasicMaterial({ color: 0x180a20 });
-    this.basic.sac = new THREE.MeshBasicMaterial({ color: 0xb4ff3c });
+    this.basic.sac = new THREE.MeshBasicMaterial({ color: 0x39e8ff });
     this.basic.shadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 });
     this.basic.bulb = new THREE.MeshBasicMaterial({ color: 0xffc46a });
     this.basic.stripe = new THREE.MeshBasicMaterial({ color: 0xd8b23a });
-    this.basic.core = new THREE.MeshBasicMaterial({ color: 0x8dff3a });
+    this.basic.core = new THREE.MeshBasicMaterial({ color: 0x39e8ff });
     this.basic.optic = new THREE.MeshBasicMaterial({ color: 0xff4a2a });
 
     this.adobeMats = [0xfff2dd, 0xf2ddc0, 0xe8d0b0, 0xfff6e6].map(
@@ -1636,11 +1638,13 @@ export class Game {
     }
     this.scene.add(this.pMesh);
 
-    /* blaster bolts — hot capsules oriented along their velocity */
+    /* blaster bolts — hot capsules oriented along their velocity.
+       cyan = rifleman coil blaster, violet = warlord plasma pods */
     const pGeo = new THREE.CapsuleGeometry(0.1, 0.45, 4, 8);
-    const pMatB = new THREE.MeshBasicMaterial({ color: 0xd8ffa0 });
+    this.boltMatC = new THREE.MeshBasicMaterial({ color: 0x9ef8ff });
+    this.boltMatV = new THREE.MeshBasicMaterial({ color: 0xd88aff });
     for (let i = 0; i < 20; i++) {
-      const m = new THREE.Mesh(pGeo, pMatB);
+      const m = new THREE.Mesh(pGeo, this.boltMatC);
       m.visible = false;
       m.layers.set(2);
       this.scene.add(m);
@@ -1821,8 +1825,8 @@ export class Game {
     const g = new THREE.Group();
     /* one race, one material kit — class is expressed by the rig's loadout */
     const rigMats: RigMats = {
-      flesh: kind === "boss" ? this.mat.bossFlesh : this.mat.alienGreen,
-      fleshD: kind === "boss" ? this.mat.bossFleshD : this.mat.alienGreenD,
+      flesh: this.mat.xenoChitin,
+      fleshD: this.mat.xenoChitinD,
       plating: this.mat.gunmetal,
       dark: this.mat.gundark,
       brass: this.mat.brass,
@@ -1897,11 +1901,11 @@ export class Game {
     const wmul = 1 + (this.wave - 1) * 0.09;
     e.hp = Math.round(ENEMY_DEFS[kind].hp * wmul);
     e.speed = ENEMY_DEFS[kind].speed * (1 + Math.min(this.wave * 0.03, 0.45));
-    /* beam-down portal */
+    /* beam-down portal — the race teleports in cold cyan light */
     this.spawnBeam(e.group.position);
-    this.spawnRing(e.group.position, 0x8dff3a, 3.2, 0.45);
-    this.burst(this.v1.set(x, 1.2, z), 0x8dff3a, 8, 3.5);
-    this.fireEventLight(x, 2, z, 0x8dff3a, 90, 0.45);
+    this.spawnRing(e.group.position, 0x39e8ff, 3.2, 0.45);
+    this.burst(this.v1.set(x, 1.2, z), 0x59f0ff, 8, 3.5);
+    this.fireEventLight(x, 2, z, 0x39e8ff, 90, 0.45);
     sfx.portal();
   }
 
@@ -1970,18 +1974,20 @@ export class Game {
     e.dieT = 0;
     this.hitList = this.hitList.filter((m) => !e.hitMeshes.includes(m));
     const p = e.group.position;
-    this.burst(this.v1.set(p.x, 1.2, p.z), 0x6fdd2f, e.kind === "brute" ? 26 : 14, e.kind === "brute" ? 7 : 5.5);
+    /* machines die in sparks and coolant */
+    this.burst(this.v1.set(p.x, 1.3, p.z), 0xffd28a, e.kind === "brute" ? 20 : 10, e.kind === "brute" ? 7 : 5.5);
+    this.burst(this.v1.set(p.x, 1.0, p.z), 0x39e8ff, e.kind === "brute" ? 14 : 8, 4);
     this.freeze = Math.max(this.freeze, e.boss ? 0.09 : e.kind === "brute" ? 0.05 : 0.028);
     this.fovKick += e.boss ? 2 : e.kind === "brute" ? 1.2 : 0.5;
-    this.fireEventLight(p.x, 1.6, p.z, e.boss ? 0xc05aff : 0x8dff3a, e.boss ? 200 : e.kind === "brute" ? 130 : 60, 0.3);
+    this.fireEventLight(p.x, 1.6, p.z, e.boss ? 0xc05aff : 0x39e8ff, e.boss ? 200 : e.kind === "brute" ? 130 : 60, 0.3);
     this.post.pulseKill(e.boss || e.kind === "brute");
-    /* goo splat decals */
+    /* scorch + coolant pool decals */
     const splats = e.kind === "brute" ? 3 : 2;
     for (let i = 0; i < splats; i++) {
       this.spawnDecal(
         this.v2.set(p.x + rand(-0.8, 0.8), 0.02, p.z + rand(-0.8, 0.8)),
         this.v3.set(0, 1, 0),
-        i === 0 ? 0x4f9a1e : 0x6fdd2f,
+        i === 0 ? 0x101418 : 0x1f7a8a,
         (e.kind === "brute" ? rand(1.5, 2.3) : rand(0.8, 1.4)),
         rand(9, 13)
       );
@@ -1990,7 +1996,7 @@ export class Game {
       sfx.bruteDie();
       sfx.boom();
       this.spawnRing(p, 0xb46aff, 7.5, 0.55);
-      this.spawnRing(p, 0x8dff3a, 5, 0.4);
+      this.spawnRing(p, 0x39e8ff, 5, 0.4);
       this.shake += 0.75;
     } else {
       sfx.alienDie();
@@ -2040,7 +2046,7 @@ export class Game {
       sfx.squish();
     }
     hud.hit();
-    this.burst(point, 0x79e836, isHead ? 8 : 5, 3.5);
+    this.burst(point, 0x59f0ff, isHead ? 8 : 5, 3.5);
     /* knockback */
     const kb = e.kind === "brute" ? 0.04 : 0.16;
     this.v2.copy(point).sub(this.camera.position);
@@ -2189,7 +2195,7 @@ export class Game {
     r.mat.color.set(color);
   }
 
-  private spawnBeam(pos: THREE.Vector3, color = 0x8dff3a): BeamFX {
+  private spawnBeam(pos: THREE.Vector3, color = 0x39e8ff): BeamFX {
     let b = this.beams.find((b) => b.t >= 1);
     if (!b) b = this.beams[0];
     b.t = 0;
@@ -3294,7 +3300,7 @@ export class Game {
             moving = false;
             if (e.spitCd <= 0 && dist < 42) {
               e.spitCd = rand(2.2, 3);
-              this.fireProjectile(gp, e.dmg);
+              this.fireBlaster(e.rig.muzzle.getWorldPosition(this.v3), e.dmg);
             }
           }
         }
@@ -3356,10 +3362,11 @@ export class Game {
     }
     p.vel.copy(this.v1).multiplyScalar(heavy ? 24 : 30);
     p.mesh.userData.dmg = dmg;
+    p.mesh.material = heavy ? this.boltMatV : this.boltMatC;
     /* muzzle report — flash ring, sparks, light pop */
-    this.spawnRing(from, heavy ? 0xb4ff3c : 0x8dff3a, heavy ? 1.7 : 1.1, 0.16);
-    this.burst(from, 0xb8ff70, 4, 3);
-    this.fireEventLight(from.x, from.y, from.z, 0x8dff3a, heavy ? 120 : 60, 0.16);
+    this.spawnRing(from, heavy ? 0xd88aff : 0x59f0ff, heavy ? 1.7 : 1.1, 0.16);
+    this.burst(from, heavy ? 0xe8c8ff : 0xbaf6ff, 4, 3);
+    this.fireEventLight(from.x, from.y, from.z, heavy ? 0xb46aff : 0x39e8ff, heavy ? 120 : 60, 0.16);
     if (heavy) sfx.plasma();
     else sfx.laser();
   }
@@ -3375,8 +3382,9 @@ export class Game {
       if (mp.y < 0.14) {
         p.active = false;
         p.mesh.visible = false;
-        this.burst(mp, 0x8dff3a, 7, 3);
-        sfx.splat();
+        this.burst(mp, 0x59f0ff, 6, 3);
+        this.spawnDecal(mp, this.v2.set(0, 1, 0), 0x123038, rand(0.3, 0.5), rand(4, 6));
+        sfx.zap();
         continue;
       }
       const dx = mp.x - this.pos.x;
@@ -3384,7 +3392,7 @@ export class Game {
       if (Math.hypot(dx, dz) < 0.95 && mp.y < 2.2) {
         p.active = false;
         p.mesh.visible = false;
-        this.burst(mp, 0x8dff3a, 8, 3.5);
+        this.burst(mp, 0x59f0ff, 8, 3.5);
         this.damagePlayer((p.mesh.userData.dmg as number) || 12);
         continue;
       }
@@ -3812,7 +3820,7 @@ export class Game {
       const sx = cx + x * k;
       const sy = cx - y * k;
       if (sx < 2 || sx > S - 2 || sy < 2 || sy > S - 2) continue;
-      g.fillStyle = e.boss ? "#ffd23f" : e.kind === "brute" ? "#c05aff" : e.kind === "spitter" ? "#ff9a2a" : "#8dff3a";
+      g.fillStyle = e.boss ? "#ffd23f" : e.kind === "brute" ? "#ff5a5a" : e.kind === "spitter" ? "#b46aff" : "#7ef0ff";
       const sz = e.boss ? 6 : e.kind === "brute" ? 4 : 3;
       g.fillRect(sx - sz / 2, sy - sz / 2, sz, sz);
     }
