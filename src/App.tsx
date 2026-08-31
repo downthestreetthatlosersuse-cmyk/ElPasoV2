@@ -209,8 +209,8 @@ function MenuScreen({ h, onStart }: { h: Hud; onStart: () => void }) {
           <h1 className="font-display title-chrome leading-[0.95] text-6xl md:text-8xl mt-1">EL PASO</h1>
           <h1 className="font-display title-blood leading-[0.95] text-5xl md:text-7xl -skew-x-6 ml-1">MELTDOWN</h1>
           <p className="font-crt text-2xl md:text-3xl text-[#ffd9a8] mt-4 max-w-2xl leading-snug">
-            THE ALIEN HORDE CROSSED THE WALL AT SUNSET. THE PLAZA IS THE LAST LINE.
-            <span className="text-[#8dff3a]"> SEND THEM BACK IN PIECES.</span>
+            HALF-MACHINE, ALL HUNGRY — THE HORDE CROSSED THE WALL AT SUNSET. THE PLAZA IS THE LAST LINE.
+            <span className="text-[#8dff3a]"> SEND THEM BACK IN SPARE PARTS.</span>
           </p>
         </div>
 

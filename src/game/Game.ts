@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { sfx } from "./audio";
 import { hud, UNLOCK_AT, UPG_NAMES, UPG_QUIRK } from "./store";
 import { createPostFX, type PostFX } from "./postfx";
-import { buildAlienRig, updateAlienRig, type AlienRig } from "./rig";
+import { buildAlienRig, updateAlienRig, type AlienRig, type RigMats } from "./rig";
 
 /* internal render resolution — chunky 480i-style pixels */
 const W = 640;
@@ -232,6 +232,11 @@ export class Game {
   private upgraded = [false, false, false, false];
   private upgradeFX: THREE.Group[] = [];
   private upgradeMats: THREE.MeshBasicMaterial[] = [];
+  /* otherworldly engravings — alien script burned into evolved gunmetal */
+  private engraveGroups: THREE.Group[] = [];
+  private engraveMats: THREE.MeshBasicMaterial[] = [];
+  private engraveReveal: number[] = [0, 0, 0, 0];
+  private wColor = new THREE.Color(0xffffff);
   /* time-of-flight: impacts apply when the bullet arrives, not on trigger pull */
   private gameT = 0;
   private pending: { at: number; fn: () => void }[] = [];
@@ -298,6 +303,8 @@ export class Game {
   private enemies: Enemy[] = [];
   private hitList: THREE.Mesh[] = [];
   private projectiles: Projectile[] = [];
+  private boltMatC!: THREE.MeshBasicMaterial;
+  private boltMatV!: THREE.MeshBasicMaterial;
   private pickups: Pickup[] = [];
   private tracers: Tracer[] = [];
   private particles: Particle[] = [];
@@ -425,13 +432,19 @@ export class Game {
     this.mat.gundark = this.lambert(0x191c22);
     this.mat.gripwood = this.lambert(0x7a4a20);
     this.mat.brass = this.lambert(0xd8a838);
+    /* xenoforged race materials — one chitin for the whole species, copper cabling */
+    this.mat.cable = this.lambert(0xb06a30);
+    this.mat.xenoChitin = new THREE.MeshLambertMaterial({ map: this.tex.alienPurple, color: 0x5f5478 });
+    this.mat.xenoChitinD = this.lambert(0x241a2e);
 
     this.basic.eye = new THREE.MeshBasicMaterial({ color: 0xc8ff2a });
     this.basic.mouth = new THREE.MeshBasicMaterial({ color: 0x180a20 });
-    this.basic.sac = new THREE.MeshBasicMaterial({ color: 0xb4ff3c });
+    this.basic.sac = new THREE.MeshBasicMaterial({ color: 0x39e8ff });
     this.basic.shadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 });
     this.basic.bulb = new THREE.MeshBasicMaterial({ color: 0xffc46a });
     this.basic.stripe = new THREE.MeshBasicMaterial({ color: 0xd8b23a });
+    this.basic.core = new THREE.MeshBasicMaterial({ color: 0x39e8ff });
+    this.basic.optic = new THREE.MeshBasicMaterial({ color: 0xff4a2a });
 
     this.adobeMats = [0xfff2dd, 0xf2ddc0, 0xe8d0b0, 0xfff6e6].map(
       (c) => new THREE.MeshLambertMaterial({ map: this.tex.adobe, color: c })
@@ -1339,6 +1352,158 @@ export class Game {
     return grp;
   }
 
+  /* alien script — a seeded strip of angular glyphs, drawn white and tinted
+     by the material's evolution color. Crisp nearest filtering keeps the
+     carving pixel-sharp at 480i. */
+  private makeGlyphTex(seed: number): THREE.CanvasTexture {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const g = c.getContext("2d")!;
+    g.clearRect(0, 0, 256, 64);
+    g.strokeStyle = "#ffffff";
+    g.fillStyle = "#ffffff";
+    g.lineWidth = 5;
+    g.lineCap = "square";
+    let s = seed >>> 0;
+    const rnd = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+    const cells = 8;
+    const cw = 256 / cells;
+    for (let i = 0; i < cells; i++) {
+      const x0 = i * cw + 5;
+      const y0 = 10;
+      const w = cw - 10;
+      const h = 44;
+      const kind = Math.floor(rnd() * 7);
+      g.beginPath();
+      if (kind === 0) {
+        /* notched pillar */
+        g.moveTo(x0 + w / 2, y0);
+        g.lineTo(x0 + w / 2, y0 + h);
+        const n = 1 + Math.floor(rnd() * 3);
+        for (let k = 0; k < n; k++) {
+          const yy = y0 + h * (0.2 + 0.6 * rnd());
+          g.moveTo(x0, yy);
+          g.lineTo(x0 + w * (0.4 + 0.5 * rnd()), yy);
+        }
+      } else if (kind === 1) {
+        /* chevron, sometimes doubled */
+        g.moveTo(x0, y0 + h * 0.8);
+        g.lineTo(x0 + w / 2, y0 + h * 0.2);
+        g.lineTo(x0 + w, y0 + h * 0.8);
+        if (rnd() > 0.5) {
+          g.moveTo(x0 + w * 0.25, y0 + h);
+          g.lineTo(x0 + w / 2, y0 + h * 0.55);
+          g.lineTo(x0 + w * 0.75, y0 + h);
+        }
+      } else if (kind === 2) {
+        /* eclipsed ring */
+        g.arc(x0 + w / 2, y0 + h / 2, h * 0.32, 0, Math.PI * 2);
+        g.moveTo(x0 + w * 0.2, y0 + h * 0.85);
+        g.lineTo(x0 + w * 0.8, y0 + h * 0.15);
+      } else if (kind === 3) {
+        /* warning delta */
+        g.moveTo(x0 + w / 2, y0);
+        g.lineTo(x0 + w, y0 + h);
+        g.lineTo(x0, y0 + h);
+        g.closePath();
+      } else if (kind === 4) {
+        /* zigzag rune */
+        g.moveTo(x0, y0);
+        g.lineTo(x0 + w * 0.7, y0);
+        g.lineTo(x0 + w * 0.3, y0 + h * 0.5);
+        g.lineTo(x0 + w, y0 + h * 0.5);
+        g.lineTo(x0 + w * 0.3, y0 + h);
+      } else if (kind === 5) {
+        /* brackets around a seed dot */
+        g.moveTo(x0 + w * 0.25, y0);
+        g.lineTo(x0, y0);
+        g.lineTo(x0, y0 + h);
+        g.lineTo(x0 + w * 0.25, y0 + h);
+        g.moveTo(x0 + w * 0.75, y0);
+        g.lineTo(x0 + w, y0);
+        g.lineTo(x0 + w, y0 + h);
+        g.lineTo(x0 + w * 0.75, y0 + h);
+        g.moveTo(x0 + w / 2 + 3, y0 + h / 2);
+        g.arc(x0 + w / 2, y0 + h / 2, 3, 0, Math.PI * 2);
+      } else {
+        /* triple rain ticks */
+        for (let k = 0; k < 3; k++) {
+          g.moveTo(x0 + w * (0.2 + 0.3 * k), y0);
+          g.lineTo(x0 + w * (0.05 + 0.3 * k), y0 + h);
+        }
+      }
+      g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    t.wrapS = THREE.RepeatWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  /* engraving strips + bands hug each gun's real surfaces; one shared
+     material per gun so the whole script breathes together */
+  private addEngravings(gun: THREE.Group, gi: number) {
+    const grp = new THREE.Group();
+    const tex = this.makeGlyphTex(1337 + gi * 7919);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      color: UPG_TINT[gi],
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const E = (w: number, h: number, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, ry, rz);
+      grp.add(m);
+    };
+    const band = (r: number, len: number, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20, 1, true), mat);
+      m.position.set(x, y, z);
+      m.rotation.x = Math.PI / 2;
+      grp.add(m);
+    };
+    if (gi === 0) {
+      /* RATTLER X — receiver flanks, shroud spine, magazine */
+      E(0.34, 0.07, 0.0485, 0.005, -0.04, 0, Math.PI / 2, 0);
+      E(0.34, 0.07, -0.0485, 0.005, -0.04, 0, -Math.PI / 2, 0);
+      E(0.22, 0.04, 0, 0.05, -0.37, -Math.PI / 2, 0, 0);
+      E(0.15, 0.05, 0.036, -0.115, -0.08, 0, Math.PI / 2, 0.12);
+    } else if (gi === 1) {
+      /* EL JUEZ — barrel flanks, glyph band around the cylinder, frame */
+      E(0.34, 0.04, 0.0295, 0.035, -0.16, 0, Math.PI / 2, 0);
+      E(0.34, 0.04, -0.0295, 0.035, -0.16, 0, -Math.PI / 2, 0);
+      band(0.07, 0.1, 0, 0.012, 0.03);
+      E(0.12, 0.05, 0.034, 0.012, 0.06, 0, Math.PI / 2, 0);
+    } else if (gi === 2) {
+      /* PUMPER-X SAURIO — pump flanks, receiver, barrel spine */
+      E(0.14, 0.06, 0.05, -0.022, -0.27, 0, Math.PI / 2, 0);
+      E(0.14, 0.06, -0.05, -0.022, -0.27, 0, -Math.PI / 2, 0);
+      E(0.12, 0.07, 0.0435, 0.032, 0.06, 0, Math.PI / 2, 0);
+      E(0.42, 0.04, 0, 0.0835, -0.19, -Math.PI / 2, 0, 0);
+    } else {
+      /* BOOMSTICK PRIME — twin tube bands + long launch-rail script */
+      band(0.091, 0.09, 0, 0.02, -0.3);
+      band(0.086, 0.09, 0, 0.02, 0.06);
+      E(0.5, 0.045, 0.089, 0.02, -0.12, 0, Math.PI / 2, 0);
+      E(0.5, 0.045, -0.089, 0.02, -0.12, 0, -Math.PI / 2, 0);
+    }
+    grp.visible = false;
+    gun.add(grp);
+    this.engraveGroups.push(grp);
+    this.engraveMats.push(mat);
+  }
+
   private buildViewmodels() {
     const star4 = this.makeStarTex(4);
     const star8 = this.makeStarTex(8);
@@ -1526,6 +1691,9 @@ export class Game {
     mag.visible = false;
     this.camera.add(this.gunGroup);
 
+    /* otherworldly engravings lie dormant in the metal until evolution */
+    for (let gi = 0; gi < 4; gi++) this.addEngravings(this.guns[gi], gi);
+
     /* alien-tech overlays: glowing power strip + core orb per gun, revealed on evolve */
     const stripDefs: [number, number, number, number, number, number][] = [
       [0.02, 0.014, 0.3, 0, 0.068, -0.08],
@@ -1630,11 +1798,13 @@ export class Game {
     }
     this.scene.add(this.pMesh);
 
-    /* projectiles */
-    const pGeo = new THREE.SphereGeometry(0.17, 8, 6);
-    const pMatB = new THREE.MeshBasicMaterial({ color: 0x9dff3a });
+    /* blaster bolts — hot capsules oriented along their velocity.
+       cyan = rifleman coil blaster, violet = warlord plasma pods */
+    const pGeo = new THREE.CapsuleGeometry(0.1, 0.45, 4, 8);
+    this.boltMatC = new THREE.MeshBasicMaterial({ color: 0x9ef8ff });
+    this.boltMatV = new THREE.MeshBasicMaterial({ color: 0xd88aff });
     for (let i = 0; i < 20; i++) {
-      const m = new THREE.Mesh(pGeo, pMatB);
+      const m = new THREE.Mesh(pGeo, this.boltMatC);
       m.visible = false;
       m.layers.set(2);
       this.scene.add(m);
@@ -1812,26 +1982,28 @@ export class Game {
 
   private buildEnemy(kind: EnemyKind, x: number, z: number): Enemy {
     const def = ENEMY_DEFS[kind];
-    const rig = buildAlienRig(kind, {
-      mat: this.mat,
-      basic: this.basic,
-      geo: this.geo,
-      lambert: (c) => this.lambert(c),
-    });
-    const g = rig.group;
+    const g = new THREE.Group();
+    /* one race, one material kit — class is expressed by the rig's loadout */
+    const rigMats: RigMats = {
+      flesh: this.mat.xenoChitin,
+      fleshD: this.mat.xenoChitinD,
+      plating: this.mat.gunmetal,
+      dark: this.mat.gundark,
+      brass: this.mat.brass,
+      joint: this.mat.metal,
+      cable: this.mat.cable,
+      core: this.basic.core,
+      optic: this.basic.optic,
+      mouth: this.basic.sac,
+      eye: this.basic.eye,
+      shadow: this.basic.shadow,
+      cape: this.mat.cape,
+      shadowGeo: this.geo.shadow,
+    };
+    const rig = buildAlienRig(kind, g, rigMats);
     const hitMeshes: THREE.Mesh[] = rig.hitMeshes;
-    const parts: Enemy["parts"] = rig.parts;
+    const parts: Enemy["parts"] = { body: rig.body };
     const baseScale = new THREE.Vector3(1, 1, 1);
-
-    if (kind === "grunt") {
-      /* geometry + skeleton built by buildAlienRig */
-    } else if (kind === "brute" || kind === "boss") {
-      /* geometry + skeleton built by buildAlienRig */
-    } else {
-      /* geometry + skeleton built by buildAlienRig */
-    }
-
-    /* boss sac, two-segment cape, crown horns and belt live on the rig */
 
     const e: Enemy = {
       kind,
@@ -1889,11 +2061,11 @@ export class Game {
     const wmul = 1 + (this.wave - 1) * 0.09;
     e.hp = Math.round(ENEMY_DEFS[kind].hp * wmul);
     e.speed = ENEMY_DEFS[kind].speed * (1 + Math.min(this.wave * 0.03, 0.45));
-    /* beam-down portal */
+    /* beam-down portal — the race teleports in cold cyan light */
     this.spawnBeam(e.group.position);
-    this.spawnRing(e.group.position, 0x8dff3a, 3.2, 0.45);
-    this.burst(this.v1.set(x, 1.2, z), 0x8dff3a, 8, 3.5);
-    this.fireEventLight(x, 2, z, 0x8dff3a, 90, 0.45);
+    this.spawnRing(e.group.position, 0x39e8ff, 3.2, 0.45);
+    this.burst(this.v1.set(x, 1.2, z), 0x59f0ff, 8, 3.5);
+    this.fireEventLight(x, 2, z, 0x39e8ff, 90, 0.45);
     sfx.portal();
   }
 
@@ -1962,18 +2134,20 @@ export class Game {
     e.dieT = 0;
     this.hitList = this.hitList.filter((m) => !e.hitMeshes.includes(m));
     const p = e.group.position;
-    this.burst(this.v1.set(p.x, 1.2, p.z), 0x6fdd2f, e.kind === "brute" ? 26 : 14, e.kind === "brute" ? 7 : 5.5);
+    /* machines die in sparks and coolant */
+    this.burst(this.v1.set(p.x, 1.3, p.z), 0xffd28a, e.kind === "brute" ? 20 : 10, e.kind === "brute" ? 7 : 5.5);
+    this.burst(this.v1.set(p.x, 1.0, p.z), 0x39e8ff, e.kind === "brute" ? 14 : 8, 4);
     this.freeze = Math.max(this.freeze, e.boss ? 0.09 : e.kind === "brute" ? 0.05 : 0.028);
     this.fovKick += e.boss ? 2 : e.kind === "brute" ? 1.2 : 0.5;
-    this.fireEventLight(p.x, 1.6, p.z, e.boss ? 0xc05aff : 0x8dff3a, e.boss ? 200 : e.kind === "brute" ? 130 : 60, 0.3);
+    this.fireEventLight(p.x, 1.6, p.z, e.boss ? 0xc05aff : 0x39e8ff, e.boss ? 200 : e.kind === "brute" ? 130 : 60, 0.3);
     this.post.pulseKill(e.boss || e.kind === "brute");
-    /* goo splat decals */
+    /* scorch + coolant pool decals */
     const splats = e.kind === "brute" ? 3 : 2;
     for (let i = 0; i < splats; i++) {
       this.spawnDecal(
         this.v2.set(p.x + rand(-0.8, 0.8), 0.02, p.z + rand(-0.8, 0.8)),
         this.v3.set(0, 1, 0),
-        i === 0 ? 0x4f9a1e : 0x6fdd2f,
+        i === 0 ? 0x101418 : 0x1f7a8a,
         (e.kind === "brute" ? rand(1.5, 2.3) : rand(0.8, 1.4)),
         rand(9, 13)
       );
@@ -1982,7 +2156,7 @@ export class Game {
       sfx.bruteDie();
       sfx.boom();
       this.spawnRing(p, 0xb46aff, 7.5, 0.55);
-      this.spawnRing(p, 0x8dff3a, 5, 0.4);
+      this.spawnRing(p, 0x39e8ff, 5, 0.4);
       this.shake += 0.75;
     } else {
       sfx.alienDie();
@@ -2032,7 +2206,7 @@ export class Game {
       sfx.squish();
     }
     hud.hit();
-    this.burst(point, 0x79e836, isHead ? 8 : 5, 3.5);
+    this.burst(point, 0x59f0ff, isHead ? 8 : 5, 3.5);
     /* knockback */
     const kb = e.kind === "brute" ? 0.04 : 0.16;
     this.v2.copy(point).sub(this.camera.position);
@@ -2181,7 +2355,7 @@ export class Game {
     r.mat.color.set(color);
   }
 
-  private spawnBeam(pos: THREE.Vector3, color = 0x8dff3a): BeamFX {
+  private spawnBeam(pos: THREE.Vector3, color = 0x39e8ff): BeamFX {
     let b = this.beams.find((b) => b.t >= 1);
     if (!b) b = this.beams[0];
     b.t = 0;
@@ -2858,6 +3032,9 @@ export class Game {
     this.reserves[i] += [90, 12, 24, 5][i];
     this.upgradeFX[i].visible = true;
     this.flashMats[i].color.set(UPG_TINT[i]);
+    /* the script sears itself into the gunmetal */
+    this.engraveGroups[i].visible = true;
+    this.engraveReveal[i] = 0.0001;
     sfx.evolve();
     hud.banner(`${UPG_NAMES[i]} ONLINE`, UPG_QUIRK[i]);
     /* fusion moment: pillar of alien light, shockwave, a beat of slow-mo */
@@ -3119,6 +3296,24 @@ export class Game {
         this.upgradeMats[ui].opacity = 0.85 + Math.sin(this.clock.elapsedTime * 7 + ui * 1.7) * 0.15;
       }
     }
+    /* engravings: white-hot sear on reveal, then a slow breathing glow.
+       A shot from the evolved gun makes the script flare for an instant. */
+    for (let ui = 0; ui < this.engraveMats.length; ui++) {
+      const em = this.engraveMats[ui];
+      if (!this.engraveGroups[ui].visible) {
+        em.opacity = 0;
+        continue;
+      }
+      if (this.engraveReveal[ui] < 1) {
+        this.engraveReveal[ui] = Math.min(1, this.engraveReveal[ui] + dt * 0.85);
+      }
+      const k = this.engraveReveal[ui];
+      const flare = ui === this.weaponIdx && this.flashT > 0 ? 0.85 : 0;
+      const burn = 1 + (1 - k) * 1.7 + flare;
+      em.opacity = Math.min(1.6, k * (0.6 + 0.22 * Math.sin(this.clock.elapsedTime * 5.5 + ui * 2.1)) * burn);
+      this.pColor.set(UPG_TINT[ui]).lerp(this.wColor, (1 - k) * 0.75 + flare * 0.3);
+      em.color.copy(this.pColor);
+    }
     /* menu: gun hidden */
     this.gunGroup.visible = this.state === "playing" || this.state === "paused";
   }
@@ -3268,7 +3463,9 @@ export class Game {
             e.spitCd -= dt;
             if (e.spitCd <= 0 && dist > 8 && dist < 46) {
               e.spitCd = rand(2.6, 3.4);
-              for (const off of [-0.35, 0, 0.35]) this.fireProjectile(gp, Math.round(e.dmg * 0.6), off);
+              e.group.updateWorldMatrix(true, true);
+              e.rig.muzzle.getWorldPosition(this.v2); /* shoulder plasma pods */
+              for (const off of [-0.35, 0, 0.35]) this.fireBlaster(this.v2, Math.round(e.dmg * 0.6), off, true);
             }
           }
         } else {
@@ -3284,7 +3481,7 @@ export class Game {
             moving = false;
             if (e.spitCd <= 0 && dist < 42) {
               e.spitCd = rand(2.2, 3);
-              this.fireProjectile(gp, e.dmg);
+              this.fireBlaster(e.rig.muzzle.getWorldPosition(this.v3), e.dmg);
             }
           }
         }
@@ -3294,7 +3491,27 @@ export class Game {
       e.bobT += dt * (moving ? e.speed * 2.2 : 3);
       e.group.position.y = e.leapT > 0 ? Math.sin(((0.5 - e.leapT) / 0.5) * Math.PI) * 1.5 : 0;
       /* skeletal rig — locomotion, attack and head tracking run as independent layers */
-      updateAlienRig(e, dt, this.pos, combat, this.clock.elapsedTime);
+      updateAlienRig(
+        e.rig,
+        dt,
+        e.kind,
+        e.boss,
+        this.pos,
+        e.group.position,
+        e.group.rotation.y,
+        moving,
+        e.speed,
+        combat,
+        e.leapT,
+        0.5,
+        e.lungeT,
+        0.3,
+        e.chargeT,
+        e.kind === "spitter" && e.spitCd < 0.45 ? 1 - e.spitCd / 0.45 : 0,
+        e.hitPop,
+        e.flashT,
+        this.clock.elapsedTime
+      );
       /* hit squash decays here; the rig applies it to the chest bone */
       if (e.hitPop > 0) e.hitPop = Math.max(0, e.hitPop - dt);
       if (e.flashT > 0) {
@@ -3307,15 +3524,15 @@ export class Game {
     }
   }
 
-  private fireProjectile(from: THREE.Vector3, dmg: number, aimOffset = 0) {
+  /* xenoforged blaster fire — straight, fast, glowing; heavy = warlord plasma pods */
+  private fireBlaster(from: THREE.Vector3, dmg: number, aimOffset = 0, heavy = false) {
     const p = this.projectiles.find((p) => !p.active);
     if (!p) return;
     p.active = true;
-    p.life = 4;
+    p.life = 2.6;
     p.mesh.visible = true;
-    p.mesh.position.set(from.x, 1.6, from.z);
-    this.v1.set(this.pos.x - from.x, 0, this.pos.z - from.z);
-    const d = this.v1.length() || 1;
+    p.mesh.position.copy(from);
+    this.v1.set(this.pos.x - from.x, this.pos.y + 1.15 - from.y, this.pos.z - from.z);
     this.v1.normalize();
     if (aimOffset !== 0) {
       const cos = Math.cos(aimOffset);
@@ -3324,23 +3541,31 @@ export class Game {
       this.v1.z = this.v1.x * sin + this.v1.z * cos;
       this.v1.x = nx;
     }
-    p.vel.set(this.v1.x * 15, 3.2 + d * 0.06, this.v1.z * 15);
+    p.vel.copy(this.v1).multiplyScalar(heavy ? 24 : 30);
     p.mesh.userData.dmg = dmg;
-    sfx.spit();
+    p.mesh.material = heavy ? this.boltMatV : this.boltMatC;
+    /* muzzle report — flash ring, sparks, light pop */
+    this.spawnRing(from, heavy ? 0xd88aff : 0x59f0ff, heavy ? 1.7 : 1.1, 0.16);
+    this.burst(from, heavy ? 0xe8c8ff : 0xbaf6ff, 4, 3);
+    this.fireEventLight(from.x, from.y, from.z, heavy ? 0xb46aff : 0x39e8ff, heavy ? 120 : 60, 0.16);
+    if (heavy) sfx.plasma();
+    else sfx.laser();
   }
 
   private updateProjectiles(dt: number) {
     for (const p of this.projectiles) {
       if (!p.active) continue;
       p.life -= dt;
-      p.vel.y -= 13 * dt;
       p.mesh.position.addScaledVector(p.vel, dt);
+      this.v3.copy(p.vel).normalize();
+      p.mesh.quaternion.setFromUnitVectors(this.v2.set(0, 1, 0), this.v3);
       const mp = p.mesh.position;
       if (mp.y < 0.14) {
         p.active = false;
         p.mesh.visible = false;
-        this.burst(mp, 0x8dff3a, 7, 3);
-        sfx.splat();
+        this.burst(mp, 0x59f0ff, 6, 3);
+        this.spawnDecal(mp, this.v2.set(0, 1, 0), 0x123038, rand(0.3, 0.5), rand(4, 6));
+        sfx.zap();
         continue;
       }
       const dx = mp.x - this.pos.x;
@@ -3348,7 +3573,7 @@ export class Game {
       if (Math.hypot(dx, dz) < 0.95 && mp.y < 2.2) {
         p.active = false;
         p.mesh.visible = false;
-        this.burst(mp, 0x8dff3a, 8, 3.5);
+        this.burst(mp, 0x59f0ff, 8, 3.5);
         this.damagePlayer((p.mesh.userData.dmg as number) || 12);
         continue;
       }
@@ -3776,7 +4001,7 @@ export class Game {
       const sx = cx + x * k;
       const sy = cx - y * k;
       if (sx < 2 || sx > S - 2 || sy < 2 || sy > S - 2) continue;
-      g.fillStyle = e.boss ? "#ffd23f" : e.kind === "brute" ? "#c05aff" : e.kind === "spitter" ? "#ff9a2a" : "#8dff3a";
+      g.fillStyle = e.boss ? "#ffd23f" : e.kind === "brute" ? "#ff5a5a" : e.kind === "spitter" ? "#b46aff" : "#7ef0ff";
       const sz = e.boss ? 6 : e.kind === "brute" ? 4 : 3;
       g.fillRect(sx - sz / 2, sy - sz / 2, sz, sz);
     }
@@ -3882,6 +4107,11 @@ export class Game {
     this.killsByGun = [0, 0, 0, 0];
     this.upgraded = [false, false, false, false];
     for (const fx of this.upgradeFX) fx.visible = false;
+    for (let gi = 0; gi < this.engraveGroups.length; gi++) {
+      this.engraveGroups[gi].visible = false;
+      this.engraveReveal[gi] = 0;
+      this.engraveMats[gi].opacity = 0;
+    }
     for (let mi = 0; mi < this.flashMats.length; mi++) this.flashMats[mi].color.set(0xffffff);
     this.pending = [];
     this.gameT = 0;
